@@ -1,0 +1,14 @@
+name: Deploy a Render
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar hook de despliegue de Render
+        run: curl -s -X POST -H "Content-Type: application/json" -d '{}' "$RENDER_DEPLOY_HOOK"
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
