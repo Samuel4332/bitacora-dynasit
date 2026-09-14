@@ -487,10 +487,11 @@
         }
         function doLogin() {
             var pass = document.getElementById('loginPass').value;
+            var remember = document.getElementById('loginRemember').checked;
             fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: pass })
+                body: JSON.stringify({ password: pass, remember: remember })
             })
                 .then(function (r) { return r.json(); })
                 .then(function (res) {
@@ -1487,6 +1488,10 @@ container.innerHTML = html;
             <p class="text-sm text-slate-500 mb-5">Ingresa la contraseña para acceder</p>
             <input type="password" id="loginPass" placeholder="Contraseña" autocomplete="current-password" class="w-full border border-slate-300 rounded-lg px-3 py-2 mb-3 text-center text-base focus:outline-none focus:ring-2 focus:ring-sky-500">
             <p id="loginError" class="hidden text-red-600 text-sm mb-2">Contraseña incorrecta</p>
+            <label class="flex items-center justify-center gap-2 text-sm text-slate-600 mb-3 select-none" for="loginRemember">
+                <input type="checkbox" id="loginRemember" checked class="w-4 h-4 accent-sky-600">
+                Recordar este dispositivo
+            </label>
             <button type="button" onclick="doLogin()" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-2.5 rounded-lg">Entrar</button>
         </div>
     </div>

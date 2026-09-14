@@ -72,8 +72,8 @@ async function initDb() {
 }
 
 // --- AUTENTICACION (token HMAC) ---
-function makeToken() {
-    const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7;
+function makeToken(days) {
+    const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * (days || 7);
     const payload = Buffer.from(JSON.stringify({ e: exp })).toString('base64');
     const sig = crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64');
     return payload + '.' + sig;
@@ -177,12 +177,13 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/login' && req.method === 'POST') {
         try {
             const body = await getRequestBody(req);
+            const tokenDays = body.remember ? 90 : 7;
             if (needsAuth() && checkPassword(body.password)) {
-                sendJSON(res, 200, { token: makeToken() });
+                sendJSON(res, 200, { token: makeToken(tokenDays), days: tokenDays });
             } else if (needsAuth()) {
                 sendJSON(res, 401, { error: 'Contrasena incorrecta' });
             } else {
-                sendJSON(res, 200, { token: makeToken() });
+                sendJSON(res, 200, { token: makeToken(tokenDays), days: tokenDays });
             }
         } catch (e) {
             sendJSON(res, 400, { error: e.message });
