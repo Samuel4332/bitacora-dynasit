@@ -1220,29 +1220,19 @@ function renderStats() {
             const title = parts.length ? 'Reporte: ' + parts.join(' - ') : 'Reporte general';
             const btn = fmt === 'xlsx' ? 'Excel' : 'PDF';
             showToast('Generando ' + btn + ' con ' + selected.length + ' novedades...', 'success');
-            apiFetch('/api/export/' + fmt, {
+            apiFetch('/api/export/url/' + fmt, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title: title, novelties: selected })
             })
                 .then(function (r) {
                     if (r.status === 401) { showToast('Sesion expirada. Vuelve a entrar con tu contrasena.', 'danger'); return null; }
-                    if (!r.ok) { showToast('Error del servidor al generar el archivo.', 'danger'); return null; }
-                    return r.blob();
+                    if (!r.ok) throw new Error('error_servidor');
+                    return r.json();
                 })
-                .then(function (blob) {
-                    if (!blob) return;
-                    const d = new Date();
-                    const stamp = d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes());
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'bitacora_' + stamp + (fmt === 'xlsx' ? '.xlsx' : '.pdf');
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
-                    showToast('Reporte ' + btn + ' descargado.', 'success');
+                .then(function (res) {
+                    if (!res || !res.url) return;
+                    window.location.href = window.location.origin + res.url;
                 })
                 .catch(function () {
                     showToast('Error al exportar: revisa tu conexion.', 'danger');

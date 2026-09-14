@@ -56,6 +56,9 @@ const DEFAULT_DATA = {
     novelties: []
 };
 
+const EXPORT_TICKETS = new Map();
+const EXPORT_TICKET_TTL = 4 * 60 * 1000; // 4 minutos
+
 async function initDb() {
     await pool.query('CREATE TABLE IF NOT EXISTS bitacora_state (id smallint PRIMARY KEY, data jsonb NOT NULL)');
     const r = await pool.query('SELECT data FROM bitacora_state WHERE id = 1');
@@ -519,6 +522,30 @@ function assemblePdf(doc) {
     return Buffer.from(out, 'latin1');
 }
 
+// --- TICKETS DE EXPORTACION (archivos de descarga) ---
+function createExportTicket(fmt, title, novelties) {
+    const key = crypto.randomBytes(12).toString('hex');
+    const sig = crypto.createHmac('sha256', AUTH_SECRET).update(key + '\u0001' + fmt).digest('hex').slice(0, 24);
+    EXPORT_TICKETS.set(key, { fmt: fmt, title: title, novelties: novelties, exp: Date.now() + EXPORT_TICKET_TTL });
+    return { url: '/api/export/file?k=' + key + '&s=' + sig };
+}
+
+function ticketSigOk(key, s, fmt) {
+    try {
+        const expected = crypto.createHmac('sha256', AUTH_SECRET).update(key + '\u0001' + fmt).digest('hex').slice(0, 24);
+        return crypto.timingSafeEqual(Buffer.from(s), Buffer.from(expected));
+    } catch (e) {
+        return false;
+    }
+}
+
+setInterval(function () {
+    const now = Date.now();
+    EXPORT_TICKETS.forEach(function (t, k) {
+        if (now > t.exp) EXPORT_TICKETS.delete(k);
+    });
+}, 60000).unref();
+
 const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const pathname = url.pathname;
@@ -639,6 +666,66 @@ const server = http.createServer(async (req, res) => {
             res.end(buf);
         } catch (e) {
             sendJSON(res, 400, { error: e.message });
+        }
+        return;
+    }
+
+    // === EXPORTACION POR TICKET (descarga en celular / WebView) ===
+    if (pathname === '/api/export/url/xlsx' || pathname === '/api/export/url/pdf') {
+        if (req.method === 'POST') {
+            try {
+                if (needsAuth() && !validToken(req.headers['x-token'])) {
+                    sendJSON(res, 401, { error: 'AUTENTICACION_REQUERIDA' });
+                    return;
+                }
+                const fmt = pathname.split('/')[4];
+                const body = await getRequestBody(req);
+                sendJSON(res, 200, createExportTicket(fmt, body.title, body.novelties));
+            } catch (e) {
+                sendJSON(res, 400, { error: e.message });
+            }
+        }
+        return;
+    }
+
+    if (pathname === '/api/export/file' && req.method === 'GET') {
+        const k = url.searchParams.get('k') || '';
+        const s = url.searchParams.get('s') || '';
+        const t = EXPORT_TICKETS.get(k);
+        if (!t) {
+            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('404 Enlace expirado o invalido');
+            return;
+        }
+        if (Date.now() > t.exp) {
+            EXPORT_TICKETS.delete(k);
+            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('404 Enlace expirado o invalido');
+            return;
+        }
+        if (!ticketSigOk(k, s, t.fmt)) {
+            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('404 Enlace expirado o invalido');
+            return;
+        }
+        EXPORT_TICKETS.delete(k);
+        try {
+            const exported = prepareExport(t.novelties);
+            const isPdf = t.fmt === 'pdf';
+            const buf = isPdf ? buildPdf(exported, t.title) : exportToXlsx(exported);
+            const d = new Date();
+            const fname = 'bitacora_' + d.getFullYear() + two(d.getMonth() + 1) + two(d.getDate()) + '_' + two(d.getHours()) + two(d.getMinutes()) + (isPdf ? '.pdf' : '.xlsx');
+            res.writeHead(200, {
+                'Content-Type': isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition': 'attachment; filename="' + fname + '"',
+                'Content-Length': buf.length,
+                'Cache-Control': 'no-store, no-cache',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type, X-Token'
+            });
+            res.end(buf);
+        } catch (e) {
+            sendJSON(res, 500, { error: e.message });
         }
         return;
     }
