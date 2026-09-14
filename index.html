@@ -275,13 +275,49 @@
                 </div>
             </div>
 
-            <!-- RECENT ACTIVITY -->
+<!-- RECENT ACTIVITY -->
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                 <div class="flex items-center space-x-2 mb-4">
                     <span class="text-lg">&#9200;</span>
                     <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Actividad Reciente</h3>
                 </div>
                 <div id="recentActivityContainer" class="space-y-2"></div>
+            </div>
+
+            <!-- EXPORT REPORT -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <div class="flex items-center space-x-2 mb-1">
+                    <span class="text-lg">&#128196;</span>
+                    <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Exportar Reporte</h3>
+                </div>
+                <p class="text-xs text-slate-400 mb-4">Filtra por fecha, habitacion o categoria y descarga el reporte en Excel o PDF (para gerencia).</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Desde</label>
+                        <input type="date" id="expFrom" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Hasta</label>
+                        <input type="date" id="expTo" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Habitacion</label>
+                        <select id="expRoom" class="w-full px-2 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 cursor-pointer">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Categoria</label>
+                        <select id="expCategory" class="w-full px-2 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 cursor-pointer">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="exportReport('xlsx')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm focus:outline-none transition">Exportar a Excel</button>
+                    <button onclick="exportReport('pdf')" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg shadow-sm focus:outline-none transition">Exportar a PDF</button>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-3">El Excel incluye 4 hojas: Detalle, Por Categoria, Por Habitacion y Por Mes.</p>
             </div>
 
         </div>
@@ -1125,13 +1161,92 @@ function toggleMobileRooms() {
         // ===== STATISTICS FUNCTIONS =====
         // ====================================================
 
-        function renderStats() {
+function renderStats() {
             renderKPIs();
             renderStatsRoomsRanking();
             renderStatsCategoriesRanking();
             renderStatsRoomSelect();
             renderRoomBreakdown();
             renderRecentActivity();
+            renderExportOptions();
+        }
+
+        // --- EXPORTAR REPORTE (EXCEL / PDF) ---
+        function renderExportOptions() {
+            const roomSel = document.getElementById('expRoom');
+            const catSel = document.getElementById('expCategory');
+            if (!roomSel || !catSel) return;
+            const curR = roomSel.value || '';
+            const curC = catSel.value || '';
+            let html = '<option value="">Todas</option>';
+            rooms.forEach(function (r) { html += '<option value="' + r.replace(/"/g, '&quot;') + '">' + r + '</option>'; });
+            roomSel.innerHTML = html;
+            roomSel.value = curR;
+            html = '<option value="">Todas</option>';
+            categories.forEach(function (c) { html += '<option value="' + c.replace(/"/g, '&quot;') + '">' + c + '</option>'; });
+            catSel.innerHTML = html;
+            catSel.value = curC;
+        }
+
+        function exportReport(fmt) {
+            const from = document.getElementById('expFrom').value;
+            const to = document.getElementById('expTo').value;
+            const room = document.getElementById('expRoom').value;
+            const cat = document.getElementById('expCategory').value;
+            const p = function (x) { x = String(x); return x.length < 2 ? '0' + x : x; };
+            var selected = [];
+            novelties.forEach(function (n) {
+                if (room && n.room !== room) return;
+                if (cat && n.category !== cat) return;
+                const d = new Date(n.date);
+                if (isNaN(d.getTime())) return;
+                const key = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+                if (from && key < from) return;
+                if (to && key > to) return;
+                selected.push({
+                    room: n.room,
+                    category: n.category,
+                    description: n.description,
+                    dateLocal: key + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
+                });
+            });
+            if (selected.length === 0) { showToast('No hay reportes con esos filtros.', 'danger'); return; }
+            var parts = [];
+            const fdate = function (s) { return s ? String(s).split('-').reverse().join('/') : ''; };
+            if (from) parts.push('Desde ' + fdate(from));
+            if (to) parts.push('Hasta ' + fdate(to));
+            if (room) parts.push('Hab ' + room);
+            if (cat) parts.push(cat);
+            const title = parts.length ? 'Reporte: ' + parts.join(' - ') : 'Reporte general';
+            const btn = fmt === 'xlsx' ? 'Excel' : 'PDF';
+            showToast('Generando ' + btn + ' con ' + selected.length + ' novedades...', 'success');
+            apiFetch('/api/export/' + fmt, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: title, novelties: selected })
+            })
+                .then(function (r) {
+                    if (r.status === 401) { showToast('Sesion expirada. Vuelve a entrar con tu contrasena.', 'danger'); return null; }
+                    if (!r.ok) { showToast('Error del servidor al generar el archivo.', 'danger'); return null; }
+                    return r.blob();
+                })
+                .then(function (blob) {
+                    if (!blob) return;
+                    const d = new Date();
+                    const stamp = d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes());
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'bitacora_' + stamp + (fmt === 'xlsx' ? '.xlsx' : '.pdf');
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+                    showToast('Reporte ' + btn + ' descargado.', 'success');
+                })
+                .catch(function () {
+                    showToast('Error al exportar: revisa tu conexion.', 'danger');
+                });
         }
 
         // --- KPI CARDS ---
